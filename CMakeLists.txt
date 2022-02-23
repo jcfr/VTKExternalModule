@@ -139,6 +139,69 @@ if (VTK_WRAP_PYTHON)
   set(vtk_python_version "${VTK_PYTHON_VERSION}")
 endif ()
 
+# Copied from vtkInstallCMakePackageHelpers.cmake
+function (_vtk_package_append_variables)
+  set(_vtk_package_variables)
+  foreach (var IN LISTS ARGN)
+    if (NOT DEFINED "${var}")
+      continue ()
+    endif ()
+
+    get_property(type_is_set CACHE "${var}"
+      PROPERTY TYPE SET)
+    if (type_is_set)
+      get_property(type CACHE "${var}"
+        PROPERTY TYPE)
+    else ()
+      set(type UNINITIALIZED)
+    endif ()
+
+    string(APPEND _vtk_package_variables
+      "if (NOT DEFINED \"${var}\" OR NOT ${var})
+  set(\"${var}\" \"${${var}}\" CACHE ${type} \"Third-party helper setting from \${CMAKE_FIND_PACKAGE_NAME}\")
+endif ()
+")
+  endforeach ()
+
+  set(vtk_find_package_code
+    "${vtk_find_package_code}${_vtk_package_variables}"
+    PARENT_SCOPE)
+endfunction ()
+
+# Collect external VTK packages dependencies
+set(_vtk_external_package_depends)
+foreach (_vtk_build_module IN LISTS _modules)
+  get_property("_depends" GLOBAL
+    PROPERTY "_vtk_module_${_vtk_build_module}_depends")
+  get_property("_private_depends" GLOBAL
+    PROPERTY "_vtk_module_${_vtk_build_module}_private_depends")
+  foreach (_vtk_build_depend IN LISTS _depends _private_depends)
+    # Considering `_vtk_build_depend` is formatted as `VTK::<ModuleName>`,
+    # replace `^VTK::` with `vtk`.
+    string(REGEX REPLACE "^VTK\:\:" "vtk" _vtk_build_depend_package ${_vtk_build_depend})
+    if (DEFINED ${_vtk_build_depend_package}_DIR OR ${_vtk_build_depend_package}_ROOT)
+      list(APPEND _vtk_external_package_depends ${_vtk_build_depend_package})
+    endif ()
+  endforeach ()
+endforeach ()
+
+# Collect packages searched using vtk_module_find_package()
+get_property(_vtk_module_find_packages GLOBAL
+  PROPERTY _vtk_module_find_packages_${PROJECT_NAME})
+
+# Set code for configuring '<projectname>-vtk-find-package-helpers.cmake'
+set(vtk_find_package_code)
+foreach (_vtk_package IN LISTS _vtk_external_package_depends _vtk_module_find_packages)
+  _vtk_package_append_variables(
+    # Standard CMake `find_package` mechanisms.
+    "${_vtk_package}_DIR"
+    "${_vtk_package}_ROOT"
+
+    # Per-package custom variables.
+    ${${_vtk_package}_FIND_PACKAGE_VARS}
+  )
+endforeach ()
+
 # Configure '<projectname>-config.cmake' for a build tree
 set(_cmake_dir
     "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
@@ -152,6 +215,11 @@ configure_file(
   "${_cmake_dir}/vtkmodule-config.cmake.in"
   "${_cmake_build_dir}/${_project_name_lc}-config.cmake"
   @ONLY)
+
+# Configure '<projectname>-vtk-find-package-helpers.cmake' for a build tree
+file(GENERATE
+  OUTPUT  "${_cmake_build_dir}/${PROJECT_NAME}-vtk-find-package-helpers.cmake"
+  CONTENT "${vtk_find_package_code}")
 
 # For convenience, a package is written to the top of the build tree.
 file(GENERATE
