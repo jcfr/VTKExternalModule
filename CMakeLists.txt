@@ -97,6 +97,23 @@ if (VTK_KIT_FILEPATH)
     )
 endif ()
 
+foreach(_vtk_build_module IN LISTS _modules)
+  get_property("_vtk_build_${_vtk_build_module}_depends" GLOBAL
+    PROPERTY "_vtk_module_${_vtk_build_module}_depends")
+  get_property("_vtk_build_${_vtk_build_module}_private_depends" GLOBAL
+    PROPERTY "_vtk_module_${_vtk_build_module}_private_depends")
+
+  foreach(_vtk_build_depend IN LISTS _vtk_build_${_vtk_build_module}_depends _vtk_build_${_vtk_build_module}_private_depends)
+    if (NOT TARGET "${_vtk_build_depend}")
+      # Attempt to import externally build module `vtk<ModuleName>`.
+      # Considering `_vtk_build_depend` is formatted as `VTK::<ModuleName>`,
+      # replace `^VTK::` with `vtk`.
+      string(REGEX REPLACE "^VTK\:\:" "vtk" _vtk_build_depend_package ${_vtk_build_depend})
+      find_package(${_vtk_build_depend_package} QUIET)
+    endif()
+  endforeach()
+endforeach()
+
 string(TOLOWER ${PROJECT_NAME} _project_name_lc)
 vtk_module_build(
   MODULES               ${_modules}
@@ -168,7 +185,7 @@ endif ()
     PARENT_SCOPE)
 endfunction ()
 
-# Collect external VTK packages dependencies
+# Collect external VTK package dependencies
 set(_vtk_external_package_depends)
 foreach (_vtk_build_module IN LISTS _modules)
   get_property("_depends" GLOBAL
@@ -229,4 +246,9 @@ file(GENERATE
 # Configure '<projectname>-config.cmake' for a install tree
 
 # TODO
+
+vtk_module_export_find_packages(
+  CMAKE_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/vtk"
+  FILE_NAME         "${PROJECT_NAME}-vtk-module-find-packages.cmake"
+  MODULES           ${_modules})
 
